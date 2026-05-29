@@ -306,6 +306,18 @@ export const setupApp = async (app: FastifyInstance): Promise<FastifyInstance> =
         case ApEdition.COMMUNITY:
             await app.register(platformProjectModule)
             await app.register(communityPiecesModule)
+            // [AgentFlow fork] Trust AgentFlow-minted identities natively in CE.
+            // Off by default (AP_AGENTFLOW_AUTH_ENABLED unset) → upstream CE
+            // behaviour is unchanged. When on, this exposes the same
+            // managed-authn external-token route AP already ships for
+            // EE/Cloud: an RS256 JWT signed by AgentFlow (verified against a
+            // seeded signing_key row, fail-closed on any verification error)
+            // is exchanged for a native AP USER token. No new auth surface,
+            // no shared-secret bypass — we reuse upstream's verified extractor.
+            // Doc: agentflow-code-docs/subsystems/activepieces-fork-auth.mdx
+            if (system.getBoolean(AppSystemProp.AGENTFLOW_AUTH_ENABLED)) {
+                await app.register(managedAuthnModule)
+            }
             break
     }
 

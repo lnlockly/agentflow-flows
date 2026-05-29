@@ -7,6 +7,12 @@ export type SystemProp = AppSystemProp
 let cachedVersion: string | undefined
 
 export enum AppSystemProp {
+    // [AgentFlow fork] When 'true', registers the managed-authn external-token
+    // route in Community edition so an AgentFlow-minted RS256 JWT (verified
+    // against a seeded signing_key) is trusted as a native AP principal.
+    // Default off → upstream CE behaviour is unchanged. See
+    // agentflow-code-docs/subsystems/activepieces-fork-auth.mdx.
+    AGENTFLOW_AUTH_ENABLED = 'AGENTFLOW_AUTH_ENABLED',
     ALLOWED_EMBED_ORIGINS = 'ALLOWED_EMBED_ORIGINS',
     API_KEY = 'API_KEY',
     TEMPLATES_API_KEY = 'TEMPLATES_API_KEY',
