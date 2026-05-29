@@ -1,0 +1,305 @@
+# AgentFlow Flows — rebranded activepieces on flows.agentflow.website (SEAM 2).
+#
+# This is the production overlay for the public, rebranded subdomain. It does
+# NOT replace the live activepieces Deployment/Service (those keep running the
+# upstream CE image). It adds:
+#
+#   1. flows-sso-handoff      — a 2-replica nginx serving ONE static page that
+#                               receives a fresh activepieces USER token in the
+#                               URL fragment and persists it to localStorage,
+#                               then redirects into the SPA. This is how a
+#                               cabinet user lands authenticated without an
+#                               iframe and without an activepieces sign-in wall.
+#   2. Ingress `flows`        — host flows.agentflow.website, two paths:
+#                                 /sso-handoff  → flows-sso-handoff (this app)
+#                                 /             → activepieces (the live SPA)
+#
+# Apply:  kubectl -n franchise-factory apply -f flows-subdomain.yaml
+# Prereq: DNS A record flows.agentflow.website → 144.217.65.94 (Cloudflare,
+#         DNS-only / grey-cloud) + cert-manager issues `flows-agentflow-tls`
+#         via the letsencrypt-prod ClusterIssuer (HTTP-01).
+#
+# After apply, set AP_FRONTEND_URL=https://flows.agentflow.website on the
+# activepieces-config ConfigMap so the SPA emits correct absolute URLs, and
+# AP_PUBLIC_URL=https://flows.agentflow.website on agentflow-agents so
+# `/me/flows/sso` returns the public host the cabinet redirects to.
+#
+# Doc: agentflow-code-docs/subsystems/activepieces-marketplace.mdx (seam 2).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flows-sso-handoff
+  namespace: franchise-factory
+  labels:
+    app.kubernetes.io/name: flows-sso-handoff
+    app.kubernetes.io/part-of: agentflow-flows
+data:
+  # nginx serves the handoff page at any path under this app; the Ingress only
+  # routes /sso-handoff here, and `try_files` always falls back to the page so
+  # /sso-handoff (no trailing slash, no index) still resolves.
+  nginx.conf: |
+    worker_processes auto;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type text/html;
+      sendfile on;
+      server_tokens off;
+      access_log off;
+      server {
+        listen 8080;
+        root /usr/share/nginx/html;
+
+        # Never cache the handoff page — it must always run the latest script.
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        # Lock it down: same-origin only, no framing, no referrer leak of the
+        # token fragment (fragments are not sent in Referer anyway, but be
+        # explicit).
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header X-Content-Type-Options "nosniff" always;
+
+        location = /healthz {
+          add_header Content-Type text/plain;
+          return 200 "ok\n";
+        }
+        # Any request that reaches this Service serves the handoff page.
+        location / {
+          try_files /sso-handoff.html =404;
+        }
+      }
+    }
+  sso-handoff.html: |
+    <!doctype html>
+    <html lang="ru">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <meta name="robots" content="noindex, nofollow" />
+      <title>AgentFlow · Автоматизации</title>
+      <style>
+        :root { color-scheme: dark; }
+        html, body { margin: 0; height: 100%; background: #0b0b0f; color: #e7e7ea;
+          font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .wrap { height: 100%; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 18px; text-align: center; }
+        .mark { width: 44px; height: 44px; border-radius: 12px;
+          background: linear-gradient(135deg, #6d5efc, #b06dfc); display: grid;
+          place-items: center; font-weight: 700; font-size: 22px; color: #fff; }
+        .spinner { width: 26px; height: 26px; border-radius: 50%;
+          border: 3px solid rgba(255,255,255,.18); border-top-color: #b06dfc;
+          animation: spin .8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .msg { color: #9a9aa6; font-size: 14px; }
+        .err { max-width: 420px; color: #ffb4b4; font-size: 14px;
+          background: rgba(255,80,80,.08); border: 1px solid rgba(255,80,80,.25);
+          border-radius: 10px; padding: 12px 16px; }
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div class="mark">A</div>
+        <div class="spinner" id="spin"></div>
+        <div class="msg" id="msg">Входим в Автоматизации…</div>
+      </div>
+      <script>
+        (function () {
+          function fail(text) {
+            var spin = document.getElementById('spin');
+            if (spin) spin.remove();
+            var msg = document.getElementById('msg');
+            msg.className = 'err';
+            msg.textContent = text;
+          }
+          try {
+            var frag = (window.location.hash || '').replace(/^#/, '');
+            var params = new URLSearchParams(frag);
+            var token = params.get('token');
+            var projectId = params.get('projectId');
+            if (!token) {
+              fail('Не передан токен входа. Откройте Автоматизации из кабинета AgentFlow.');
+              return;
+            }
+            if (token.split('.').length !== 3) {
+              fail('Некорректный токен входа.');
+              return;
+            }
+            window.localStorage.setItem('token', token);
+            if (projectId) { window.localStorage.setItem('projectId', projectId); }
+            try { window.history.replaceState(null, '', '/sso-handoff'); } catch (e) {}
+            window.location.replace('/');
+          } catch (e) {
+            fail('Не удалось выполнить вход: ' + (e && e.message ? e.message : 'ошибка'));
+          }
+        })();
+      </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flows-sso-handoff
+  namespace: franchise-factory
+  labels:
+    app.kubernetes.io/name: flows-sso-handoff
+    app.kubernetes.io/part-of: agentflow-flows
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flows-sso-handoff
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flows-sso-handoff
+        app.kubernetes.io/part-of: agentflow-flows
+    spec:
+      # Spread the two replicas across nodes so a single-node drain doesn't
+      # take the SSO entry point down (matches the core-deploy topology rule).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: flows-sso-handoff
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html/sso-handoff.html
+              subPath: sso-handoff.html
+              readOnly: true
+            - name: conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            # nginx-unprivileged needs writable temp/cache dirs under a
+            # read-only root filesystem.
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: html
+          configMap:
+            name: flows-sso-handoff
+            items:
+              - key: sso-handoff.html
+                path: sso-handoff.html
+        - name: conf
+          configMap:
+            name: flows-sso-handoff
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flows-sso-handoff
+  namespace: franchise-factory
+  labels:
+    app.kubernetes.io/name: flows-sso-handoff
+    app.kubernetes.io/part-of: agentflow-flows
+spec:
+  selector:
+    app.kubernetes.io/name: flows-sso-handoff
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  # Replaces the legacy `activepieces` Ingress host. The public, rebranded
+  # entry point. The internal flows.proj.agentflow.website Ingress can stay for
+  # debugging but the cabinet only ever sends users to flows.agentflow.website.
+  name: flows-public
+  namespace: franchise-factory
+  labels:
+    app.kubernetes.io/part-of: agentflow-flows
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    # ── Thin rebrand overlay (SEAM 2, no AP frontend fork) ──
+    # CE has no branding env (logo/name are EE-gated), so we rewrite the
+    # user-facing "Activepieces" string + the document <title> at the reverse
+    # proxy. sub_filter only rewrites uncompressed responses, so we strip the
+    # client's Accept-Encoding for HTML. This is reversible (drop the snippet)
+    # and survives AP upgrades (string match, not a code patch). If CE ever
+    # ships a deeper rebrand surface, replace this with the fork's theming.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Accept-Encoding "";
+      sub_filter_once off;
+      sub_filter_types text/html application/javascript;
+      sub_filter "Activepieces" "AgentFlow Flows";
+      sub_filter "<title>AgentFlow Flows</title>" "<title>AgentFlow · Автоматизации</title>";
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - flows.agentflow.website
+      secretName: flows-agentflow-tls
+  rules:
+    - host: flows.agentflow.website
+      http:
+        paths:
+          # SSO landing page — must be matched before the catch-all `/`.
+          - path: /sso-handoff
+            pathType: Prefix
+            backend:
+              service:
+                name: flows-sso-handoff
+                port:
+                  number: 80
+          # Everything else is the activepieces SPA + API.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: activepieces
+                port:
+                  number: 80
