@@ -13,6 +13,19 @@ export enum AppSystemProp {
     // Default off → upstream CE behaviour is unchanged. See
     // agentflow-code-docs/subsystems/activepieces-fork-auth.mdx.
     AGENTFLOW_AUTH_ENABLED = 'AGENTFLOW_AUTH_ENABLED',
+    // [AgentFlow fork] When 'true', gates a flow run on the owner's AgentFlow
+    // balance (pre-run hard block at zero) and debits the owner per production
+    // run. Default off → upstream behaviour is byte-identical (no HTTP call).
+    // Calls agentflow-agents' internal billing API (balance read + run charge)
+    // over the cluster network, authed with AGENTFLOW_INTERNAL_SECRET. See
+    // agentflow-code-docs/subsystems/activepieces-fork-billing.mdx.
+    AGENTFLOW_BILLING_ENABLED = 'AGENTFLOW_BILLING_ENABLED',
+    // Base URL of agentflow-agents (e.g. http://agentflow-agents.franchise-factory:8080).
+    AGENTFLOW_AGENTS_URL = 'AGENTFLOW_AGENTS_URL',
+    // Shared internal secret sent as the x-agentflow-secret header.
+    AGENTFLOW_INTERNAL_SECRET = 'AGENTFLOW_INTERNAL_SECRET',
+    // Flat FLOW price debited per successful production run (decimal string).
+    AGENTFLOW_RUN_PRICE_FLOW = 'AGENTFLOW_RUN_PRICE_FLOW',
     ALLOWED_EMBED_ORIGINS = 'ALLOWED_EMBED_ORIGINS',
     API_KEY = 'API_KEY',
     TEMPLATES_API_KEY = 'TEMPLATES_API_KEY',
