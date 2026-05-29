@@ -46,6 +46,13 @@ const systemPropValidators: {
     [key in SystemProp]: (value: string) => true | string
 } = {
     // AppSystemProp
+    // [AgentFlow fork] auth + billing/quota env validators. See
+    // agentflow-code-docs/subsystems/activepieces-fork-{auth,billing}.mdx.
+    [AppSystemProp.AGENTFLOW_AUTH_ENABLED]: booleanValidator,
+    [AppSystemProp.AGENTFLOW_BILLING_ENABLED]: booleanValidator,
+    [AppSystemProp.AGENTFLOW_AGENTS_URL]: urlValidator,
+    [AppSystemProp.AGENTFLOW_INTERNAL_SECRET]: stringValidator,
+    [AppSystemProp.AGENTFLOW_RUN_PRICE_FLOW]: stringValidator,
     [AppSystemProp.EXECUTION_MODE]: enumValidator(Object.values(ExecutionMode)),
     [AppSystemProp.SKIP_PROJECT_LIMITS_CHECK]: booleanValidator,
     [AppSystemProp.LOG_LEVEL]: enumValidator(['error', 'warn', 'info', 'debug', 'trace']),

@@ -21,6 +21,8 @@ import { AppSystemProp, ContainerType, environmentVariables, SystemProp } from '
 
 const systemPropDefaultValues: Partial<Record<SystemProp, string>> = {
     [AppSystemProp.AGENTFLOW_AUTH_ENABLED]: 'false',
+    [AppSystemProp.AGENTFLOW_BILLING_ENABLED]: 'false',
+    [AppSystemProp.AGENTFLOW_RUN_PRICE_FLOW]: '0.01',
     [AppSystemProp.API_RATE_LIMIT_AUTHN_ENABLED]: 'true',
     [AppSystemProp.API_RATE_LIMIT_AUTHN_MAX]: '50',
     [AppSystemProp.API_RATE_LIMIT_AUTHN_WINDOW]: '1 minute',

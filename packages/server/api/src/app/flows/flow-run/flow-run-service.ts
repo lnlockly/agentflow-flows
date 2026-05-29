@@ -46,6 +46,7 @@ import { payloadOffloader } from '../../workers/payload-offloader'
 import { flowService } from '../flow/flow.service'
 import { flowVersionService } from '../flow-version/flow-version.service'
 import { sampleDataService } from '../step-run/sample-data.service'
+import { agentflowBilling } from './agentflow-billing'
 import { FlowRunEntity } from './flow-run-entity'
 import { flowRunSideEffects } from './flow-run-side-effects'
 import { runsMetadataQueue } from './flow-runs-queue'
@@ -292,6 +293,13 @@ export const flowRunService = (log: FastifyBaseLogger) => ({
         }, async (span) => {
             try {
                 span.setAttribute('flowRun.flowId', flowId)
+
+                // [AgentFlow fork] Pre-run hard balance gate. No-op when
+                // AGENTFLOW_BILLING_ENABLED is off (upstream-identical) or the
+                // project is not AgentFlow-managed. Throws QUOTA_EXCEEDED (402)
+                // when the owner's balance is <= 0, blocking dispatch before any
+                // queue/work happens. Doc: agentflow-code-docs/subsystems/activepieces-fork-billing.mdx
+                await agentflowBilling.assertOwnerHasBalance({ projectId, log })
 
                 const newFlowRun = await queueOrCreateInstantly({
                     projectId,
