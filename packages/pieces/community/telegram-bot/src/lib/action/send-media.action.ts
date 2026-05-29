@@ -203,7 +203,8 @@ export const telegramSendMediaAction = createAction({
         form.append('caption', ctx.propsValue['message']);
         if (ctx.propsValue['message_thread_id'])
           form.append('message_thread_id', ctx.propsValue['message_thread_id']);
-        form.append('parse_mode', ctx.propsValue['format'] ?? 'MarkdownV2');
+        const formParseMode = telegramCommons.resolveParseMode(ctx.propsValue['format'] ?? 'MarkdownV2');
+        if (formParseMode) form.append('parse_mode', formParseMode);
         if (ctx.propsValue['reply_markup'])
           form.append(
             'reply_markup',
@@ -220,7 +221,7 @@ export const telegramSendMediaAction = createAction({
         body.caption = ctx.propsValue['message'];
         body.message_thread_id =
           ctx.propsValue['message_thread_id'] ?? undefined;
-        body.parse_mode = ctx.propsValue['format'] ?? 'MarkdownV2';
+        body.parse_mode = telegramCommons.resolveParseMode(ctx.propsValue['format'] ?? 'MarkdownV2');
         body.reply_markup = ctx.propsValue['reply_markup'] ?? undefined;
       } else {
         throw new Error(

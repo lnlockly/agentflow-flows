@@ -102,7 +102,7 @@ export const telegramRequestApprovalMessageAction = createAction({
         body: {
           chat_id,
           text: message,
-          parse_mode: parse_mode || 'MarkdownV2',
+          ...(telegramCommons.resolveParseMode(parse_mode) ? { parse_mode: telegramCommons.resolveParseMode(parse_mode) } : {}),
           reply_markup: {
             inline_keyboard: [
               [
