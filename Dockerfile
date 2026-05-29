@@ -74,6 +74,23 @@ COPY . .
 # Build frontend, engine, server API, and worker
 RUN npx turbo run build --filter=web --filter=@activepieces/engine --filter=api --filter=worker
 
+# Build the AgentFlow-native pieces (kwork + telegram) so their dist/ exists at
+# runtime. The production image has no turbo/devDeps, so the dev-piece watcher
+# cannot build them on boot — they are loaded from disk via AP_DEV_PIECES, which
+# reads <piece>/dist. Mirror the watcher's post-build step: copy package.json +
+# i18n into dist so the loader finds the package name and translations.
+RUN npx turbo run build \
+      --filter=@activepieces/pieces-framework \
+      --filter=@activepieces/pieces-common \
+      --filter=@activepieces/shared \
+      --filter=@activepieces/piece-agentflow-kwork \
+      --filter=@activepieces/piece-agentflow-telegram && \
+    for p in agentflow-kwork agentflow-telegram; do \
+      cp packages/pieces/community/$p/package.json packages/pieces/community/$p/dist/package.json && \
+      mkdir -p packages/pieces/community/$p/dist/src/i18n && \
+      cp -r packages/pieces/community/$p/src/i18n/. packages/pieces/community/$p/dist/src/i18n/ 2>/dev/null || true; \
+    done
+
 # Generate migration manifest (ordered list of migration names) for image-tag-based rollback
 RUN node -e "\
   const {getMigrations} = require('./packages/server/api/dist/src/app/database/postgres-connection');\
@@ -89,6 +106,8 @@ RUN rm -rf packages/pieces/core packages/pieces/custom && \
       ! -name square \
       ! -name facebook-leads \
       ! -name intercom \
+      ! -name agentflow-kwork \
+      ! -name agentflow-telegram \
       -exec rm -rf {} + && \
     rm -f bun.lock && bun install
 
