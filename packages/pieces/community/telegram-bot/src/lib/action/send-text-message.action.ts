@@ -49,9 +49,14 @@ export const telegramSendMessageAction = createAction({
             label: 'HTML',
             value: 'HTML',
           },
+          {
+            label: 'Plain Text',
+            value: 'None',
+          },
         ],
       },
-      defaultValue: 'MarkdownV2',
+      // Plain text by default: a MarkdownV2 default 400s on unescaped -.!() etc.
+      defaultValue: 'None',
     }),
     instructions_format: Property.MarkDown({
       value: format,

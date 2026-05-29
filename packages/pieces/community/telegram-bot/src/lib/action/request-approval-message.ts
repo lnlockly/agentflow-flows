@@ -56,7 +56,9 @@ export const telegramRequestApprovalMessageAction = createAction({
           },
         ],
       },
-      defaultValue: 'MarkdownV2',
+      // Plain text by default: Telegram MarkdownV2 rejects unescaped -.!() etc.,
+      // so a markdown default silently 400s on ordinary messages. Users opt in.
+      defaultValue: 'None',
     }),
     approve_button_text: Property.ShortText({
       displayName: 'Approve Button Text',
