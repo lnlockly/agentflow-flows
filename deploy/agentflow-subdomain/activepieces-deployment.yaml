@@ -1,0 +1,88 @@
+# AgentFlow production overlay for the live `activepieces` workload
+# (namespace franchise-factory). This is the *fork* deployment: it runs OUR
+# image ghcr.io/lnlockly/agentflow-flows (rebrand + auth + billing patches)
+# instead of the upstream ghcr.io/activepieces/activepieces:0.83.0.
+#
+# Config comes from two existing objects that this file does NOT own:
+#   - configmap/activepieces-config  (AP_FRONTEND_URL, AP_POSTGRES_*, AP_REDIS_*, ...)
+#   - secret/activepieces-env        (AP_JWT_SECRET, AP_ENCRYPTION_KEY, AP_API_KEY, ...)
+# The AgentFlow fork env (AP_AGENTFLOW_*) is appended below as explicit `env`
+# entries so the patch is self-documenting and survives a config rebuild.
+#
+# AP reads every system prop with an `AP_` prefix (see
+# packages/server/api/src/app/helper/system/system-props.ts:172), so the fork
+# vars AGENTFLOW_AUTH_ENABLED / AGENTFLOW_AGENTS_URL / AGENTFLOW_INTERNAL_SECRET
+# are set as AP_AGENTFLOW_*.
+#
+# Billing stays OFF (AP_AGENTFLOW_BILLING_ENABLED unset) until a separate
+# verified step turns it on.
+#
+# Apply: kubectl -n franchise-factory apply -f activepieces-deployment.yaml
+# (the image tag below is bumped per release; see _flows-fork-deploy.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activepieces
+  namespace: franchise-factory
+  labels:
+    app: activepieces
+    role: app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: activepieces
+      role: app
+  template:
+    metadata:
+      labels:
+        app: activepieces
+        role: app
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: app
+          image: ghcr.io/lnlockly/agentflow-flows:6bc3483cb3940f7fdc04ff9a45bc5f5dce018ec2
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: activepieces-config
+            - secretRef:
+                name: activepieces-env
+          env:
+            - name: AP_CONTAINER_TYPE
+              value: "APP"
+            # --- AgentFlow fork: managed-authn (trusts AgentFlow-minted identity in CE) ---
+            - name: AP_AGENTFLOW_AUTH_ENABLED
+              value: "true"
+            - name: AP_AGENTFLOW_AGENTS_URL
+              value: "https://agents.agentflow.website"
+            - name: AP_AGENTFLOW_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agentflow-flows-internal
+                  key: AGENTFLOW_INTERNAL_SECRET
+            # AP_AGENTFLOW_BILLING_ENABLED intentionally unset (billing OFF for now).
+          livenessProbe:
+            httpGet:
+              path: /api/v1/flags
+              port: 80
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/flags
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
