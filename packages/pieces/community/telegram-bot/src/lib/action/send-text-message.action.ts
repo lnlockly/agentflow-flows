@@ -82,7 +82,7 @@ export const telegramSendMessageAction = createAction({
         chat_id: ctx.propsValue['chat_id'],
         text: ctx.propsValue['message'],
         message_thread_id: ctx.propsValue['message_thread_id'] ?? undefined,
-        parse_mode: ctx.propsValue['format'] ?? 'MarkdownV2',
+        parse_mode: telegramCommons.resolveParseMode(ctx.propsValue['format'] ?? 'MarkdownV2'),
         reply_markup: ctx.propsValue['reply_markup'] ?? undefined,
         disable_web_page_preview: ctx.propsValue['web_page_preview'] ?? false,
       },
