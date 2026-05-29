@@ -1,0 +1,81 @@
+name: AgentFlow Flows CI
+
+# Builds the AgentFlow fork of activepieces as OUR image and pushes it to
+# ghcr.io/lnlockly/agentflow-flows. This is the Level-2 fork (engine-level
+# control of auth + billing). The live CE pods keep running on the upstream
+# image; this fork image is separate and deployed deliberately.
+#
+# Runs on the dedicated self-hosted ff-france runner (label `ff-france`),
+# mirroring the per-repo runner pattern used by agentflow-agents /
+# agentflow-mcp-server.
+#
+# Docs: agentflow-code-docs/subsystems/activepieces-fork-auth.mdx
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'Dockerfile'
+      - 'docker-entrypoint.sh'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/agentflow-flows-ci.yml'
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/agentflow-flows
+
+concurrency:
+  group: agentflow-flows-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, ff-france]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # SHA-pinned: actions/checkout@v4 = 11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Resolve image tags
+        id: meta
+        run: |
+          SHA_TAG="${GITHUB_SHA}"
+          echo "sha_tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA_TAG:0:12}" >> "$GITHUB_OUTPUT"
+
+      # SHA-pinned: docker/setup-buildx-action@v3 = 8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      # SHA-pinned: docker/login-action@v3 = 74a5d142397b4f367a81961eba4e8cd7edddf772
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # SHA-pinned: docker/build-push-action@v6 = 14487ce63c7a62a4a324b0bfb37086795e31c6c1
+      - name: Build & push agentflow-flows image
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.sha_tag }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "## agentflow-flows image built"
+            echo "- Image: \`${IMAGE}:${{ steps.meta.outputs.sha_tag }}\`"
+            echo "- Also tagged: \`${IMAGE}:latest\`"
+            echo "- Runner: ff-france self-hosted"
+          } >> "$GITHUB_STEP_SUMMARY"
