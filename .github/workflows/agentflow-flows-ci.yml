@@ -22,6 +22,7 @@ on:
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/agentflow-flows-ci.yml'
+      - 'deploy/agentflow-subdomain/**'
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/agentflow-flows
@@ -78,4 +79,53 @@ jobs:
             echo "- Image: \`${IMAGE}:${{ steps.meta.outputs.sha_tag }}\`"
             echo "- Also tagged: \`${IMAGE}:latest\`"
             echo "- Runner: ff-france self-hosted"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Deploy BOTH the app and the worker from the SAME freshly-built image, in
+  # lockstep. The `activepieces` app and `activepieces-worker` exchange
+  # EXECUTE_FLOW jobs over an internal RPC whose payload schema is tied to the
+  # build: deploying a new app image without the matching worker (or vice
+  # versa) silently breaks ALL flow execution (runs stick QUEUED, worker
+  # INTERNAL_ERRORs before any sandbox). That is exactly what happened on
+  # 2026-05-29 when only the app was repointed to the fork image. Applying the
+  # manifest (which now carries BOTH Deployments) with the image tag rewritten
+  # to this commit's SHA keeps them on the same image every time, and the final
+  # assert fails the job if they ever diverge.
+  # Doc: agentflow-code-docs/subsystems/activepieces-marketplace.mdx (failure modes).
+  deploy:
+    needs: build
+    runs-on: [self-hosted, ff-france]
+    permissions:
+      contents: read
+    steps:
+      # SHA-pinned: actions/checkout@v4 = 11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Apply app + worker manifest at this build's image
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          MANIFEST=deploy/agentflow-subdomain/activepieces-deployment.yaml
+          # Rewrite every agentflow-flows image tag to this commit's SHA, then
+          # apply the whole manifest (app + worker Deployments together).
+          sed -E "s|(ghcr\.io/lnlockly/agentflow-flows):[A-Za-z0-9._-]+|\1:${SHA}|g" "$MANIFEST" \
+            | kubectl -n franchise-factory apply -f -
+          kubectl -n franchise-factory rollout status deploy/activepieces        --timeout=8m
+          kubectl -n franchise-factory rollout status deploy/activepieces-worker  --timeout=8m
+
+      - name: Assert app and worker run the SAME image (lockstep guard)
+        run: |
+          set -euo pipefail
+          APP=$(kubectl -n franchise-factory get deploy/activepieces        -o jsonpath='{.spec.template.spec.containers[0].image}')
+          WRK=$(kubectl -n franchise-factory get deploy/activepieces-worker -o jsonpath='{.spec.template.spec.containers[0].image}')
+          echo "app=$APP"
+          echo "worker=$WRK"
+          if [ "$APP" != "$WRK" ]; then
+            echo "::error::activepieces app and worker run different images — flow execution will break (incompatible EXECUTE_FLOW job schema)."
+            exit 1
+          fi
+          {
+            echo "## agentflow-flows deployed (app + worker lockstep)"
+            echo "- app + worker: \`$APP\`"
           } >> "$GITHUB_STEP_SUMMARY"
