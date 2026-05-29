@@ -45,7 +45,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: app
-          image: ghcr.io/lnlockly/agentflow-flows:6bc3483cb3940f7fdc04ff9a45bc5f5dce018ec2
+          image: ghcr.io/lnlockly/agentflow-flows:67ebbd74240ff946d07b2bab7670a902f05fc4d1
           ports:
             - containerPort: 80
           envFrom:
@@ -85,4 +85,59 @@ spec:
               memory: 512Mi
             limits:
               cpu: "2"
+              memory: 2Gi
+---
+# AgentFlow fork WORKER. This MUST run the SAME fork image+tag as the `app`
+# Deployment above. The app and worker exchange EXECUTE_FLOW jobs over an
+# internal RPC whose payload schema is tied to the build: a fork `app` paired
+# with an upstream `activepieces:0.83.0` `worker` silently breaks ALL flow
+# execution — every run sticks in QUEUED and the worker reports INTERNAL_ERROR
+# before it ever spins up a sandbox (EXECUTE_WEBHOOK/POLLING/TRIGGER_HOOK are
+# unaffected, which masks the outage). This happened in prod on 2026-05-29:
+# the rebrand deploy bumped only `app` to the fork image and left this worker
+# on upstream, taking flow execution down from 15:19 until the images were
+# realigned. Keeping both Deployments in one file means a single
+# `kubectl apply -f` (and every per-release tag bump) updates them together.
+#
+# Apply: kubectl -n franchise-factory apply -f activepieces-deployment.yaml
+# Doc: agentflow-code-docs/subsystems/activepieces-marketplace.mdx (failure modes).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activepieces-worker
+  namespace: franchise-factory
+  labels:
+    app: activepieces
+    role: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activepieces
+      role: worker
+  template:
+    metadata:
+      labels:
+        app: activepieces
+        role: worker
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: worker
+          image: ghcr.io/lnlockly/agentflow-flows:67ebbd74240ff946d07b2bab7670a902f05fc4d1
+          envFrom:
+            - configMapRef:
+                name: activepieces-config
+            - secretRef:
+                name: activepieces-env
+          env:
+            - name: AP_CONTAINER_TYPE
+              value: "WORKER"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
               memory: 2Gi
