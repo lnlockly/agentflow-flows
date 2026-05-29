@@ -1,6 +1,6 @@
 import { ApEdition, ApFlagId } from '@activepieces/shared';
 import { t } from 'i18next';
-import { ChevronsUpDown } from 'lucide-react';
+import { ChevronLeft, ChevronsUpDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useEmbedding } from '@/components/providers/embed-provider';
@@ -59,6 +59,15 @@ export const AppSidebarHeader = () => {
             </h1>
           )}
         </div>
+        {state !== 'collapsed' && (
+          <a
+            href={AGENTFLOW_CABINET_URL}
+            className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="size-3 shrink-0" />
+            <span className="truncate">Кабинет</span>
+          </a>
+        )}
       </SidebarHeader>
     );
   }
@@ -85,3 +94,5 @@ export const AppSidebarHeader = () => {
     </SidebarHeader>
   );
 };
+
+const AGENTFLOW_CABINET_URL = 'https://agentflow.website/cabinet';
