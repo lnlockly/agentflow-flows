@@ -41,6 +41,12 @@
       "@activepieces/piece-agent": [
         "packages/pieces/community/agent/src/index.ts"
       ],
+      "@activepieces/piece-agentflow-kwork": [
+        "packages/pieces/community/agentflow-kwork/src/index.ts"
+      ],
+      "@activepieces/piece-agentflow-telegram": [
+        "packages/pieces/community/agentflow-telegram/src/index.ts"
+      ],
       "@activepieces/piece-agentx": [
         "packages/pieces/community/agentx/src/index.ts"
       ],
